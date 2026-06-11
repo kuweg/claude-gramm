@@ -54,6 +54,25 @@ def test_build_from_env_selects_deepseek(tmp_path, monkeypatch):
     assert client.json_schema_supported is False  # DeepSeek uses json_object mode
 
 
+def test_missing_anthropic_key_raises_friendly_error(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    client = llm.AnthropicClient("claude-sonnet-4-6")  # build is fine (lazy)
+    with pytest.raises(llm.LLMAuthError) as exc:
+        _ = client.sdk  # only fails when actually used
+    assert "ANTHROPIC_API_KEY" in str(exc.value)
+
+
+def test_missing_deepseek_key_raises_friendly_error(monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    client = llm.OpenAICompatClient(
+        "deepseek-chat", base_url="https://api.deepseek.com", api_key_env="DEEPSEEK_API_KEY"
+    )
+    with pytest.raises(llm.LLMAuthError) as exc:
+        _ = client.sdk
+    assert "DEEPSEEK_API_KEY" in str(exc.value)
+
+
 def test_explicit_provider_overrides_inference(tmp_path, monkeypatch):
     monkeypatch.setenv("ENGRAM_PROVIDER", "deepseek")
     monkeypatch.setenv("ENGRAM_MODEL", "some-custom-model")

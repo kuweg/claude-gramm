@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from . import backfill as backfill_mod
 from . import hook, llm, review
-from .config import Config, config_path, default_config_toml, load_config
+from .config import Config, config_path, default_config_toml, load_config, load_dotenv
 from .entities import EntityBook
 from .process import process_session
 from .state import State
@@ -213,6 +213,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()  # pull API keys / ENGRAM_MODEL from .env if present
     parser = build_parser()
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except llm.LLMAuthError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1

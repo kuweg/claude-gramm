@@ -21,6 +21,43 @@ def _config_dir() -> Path:
     return Path(platformdirs.user_config_dir(APP_NAME))
 
 
+def parse_dotenv(text: str) -> dict[str, str]:
+    """Parse KEY=VALUE lines: ignore blanks/comments, strip `export ` and quotes."""
+    out: dict[str, str] = {}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):]
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key:
+            out[key] = value
+    return out
+
+
+def load_dotenv(*, cwd: Path | None = None, environ: dict[str, str] | None = None) -> None:
+    """Load API keys / settings from a .env file WITHOUT overriding the real env.
+
+    Search order (first to set a key wins; the real environment always wins):
+    ``$ENGRAM_ENV`` → ``./.env`` → ``<config-dir>/.env``.
+    """
+    env = os.environ if environ is None else environ
+    cwd = Path.cwd() if cwd is None else cwd
+    candidates: list[Path] = []
+    if env.get("ENGRAM_ENV"):
+        candidates.append(Path(env["ENGRAM_ENV"]))
+    candidates.append(cwd / ".env")
+    candidates.append(_config_dir() / ".env")
+    for path in candidates:
+        if path.is_file():
+            for key, value in parse_dotenv(path.read_text()).items():
+                env.setdefault(key, value)
+
+
 def _data_dir() -> Path:
     return Path(platformdirs.user_data_dir(APP_NAME))
 

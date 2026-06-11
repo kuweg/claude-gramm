@@ -20,6 +20,10 @@ from .config import Config
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 
+
+class LLMAuthError(RuntimeError):
+    """A provider API key is missing from the environment."""
+
 ANTHROPIC_PREFIXES = ("claude", "opus", "sonnet", "haiku", "fable", "mythos")
 OPENAI_PREFIXES = ("gpt", "o1", "o3", "o4", "chatgpt")
 
@@ -74,6 +78,11 @@ class AnthropicClient(LLMClient):
     @property
     def sdk(self) -> Any:
         if self._sdk is None:
+            if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+                raise LLMAuthError(
+                    f"Anthropic model {self.model!r} selected but no API key found. "
+                    "Set ANTHROPIC_API_KEY (in your shell or a .env file)."
+                )
             import anthropic
 
             self._sdk = anthropic.Anthropic()
@@ -126,11 +135,15 @@ class OpenAICompatClient(LLMClient):
     @property
     def sdk(self) -> Any:
         if self._sdk is None:
+            api_key = os.environ.get(self.api_key_env)
+            if not api_key:
+                raise LLMAuthError(
+                    f"Model {self.model!r} selected but no API key found. "
+                    f"Set {self.api_key_env} (in your shell or a .env file)."
+                )
             import openai
 
-            self._sdk = openai.OpenAI(
-                base_url=self.base_url, api_key=os.environ.get(self.api_key_env)
-            )
+            self._sdk = openai.OpenAI(base_url=self.base_url, api_key=api_key)
         return self._sdk
 
     def complete_json(self, *, system, prompt, schema, max_tokens=4096) -> dict:

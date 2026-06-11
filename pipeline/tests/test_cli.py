@@ -102,6 +102,32 @@ def test_init_interactive_uses_prompt(tmp_path, monkeypatch):
     assert f'vault_path   = "{vault}"' in cfgpath.read_text()
 
 
+def test_missing_api_key_is_clean_error_not_traceback(tmp_path, fixtures_dir, parser_bin, monkeypatch, capsys):
+    cfgpath = tmp_path / "config.toml"
+    cfgpath.write_text(
+        f'vault_path = "{tmp_path / "vault"}"\n'
+        f'parser_bin = "{parser_bin}"\n'
+        f'state_db = "{tmp_path / "state.db"}"\n'
+        f'entities_file = "{tmp_path / "entities.yaml"}"\n'
+    )
+
+    class NoKeyClient:
+        def complete_json(self, **_):
+            raise cli.llm.LLMAuthError("Set ANTHROPIC_API_KEY (in your shell or a .env file).")
+
+        def complete_text(self, **_):
+            raise cli.llm.LLMAuthError("Set ANTHROPIC_API_KEY.")
+
+    monkeypatch.setattr(cli, "build_client", lambda config: NoKeyClient())
+    rc = cli.main(
+        ["--config", str(cfgpath), "process", str(fixtures_dir / "events.jsonl"), "--dry-run"]
+    )
+    assert rc == 1
+    err = capsys.readouterr().err
+    assert "ANTHROPIC_API_KEY" in err
+    assert "Traceback" not in err
+
+
 def test_build_parser_has_all_subcommands():
     parser = cli.build_parser()
     # argparse exits on missing subcommand; just ensure choices exist

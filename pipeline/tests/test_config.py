@@ -45,6 +45,37 @@ def test_env_override_selects_config_path(tmp_path, monkeypatch):
     assert c.vault_path == Path("/from/env")
 
 
+def test_parse_dotenv_handles_comments_quotes_and_export():
+    parsed = cfg.parse_dotenv(
+        "# comment\n"
+        "\n"
+        "ANTHROPIC_API_KEY=sk-ant-123\n"
+        'OPENAI_API_KEY="sk-oai-456"\n'
+        "export DEEPSEEK_API_KEY='sk-ds-789'\n"
+        "ENGRAM_MODEL = gpt-4o \n"
+    )
+    assert parsed["ANTHROPIC_API_KEY"] == "sk-ant-123"
+    assert parsed["OPENAI_API_KEY"] == "sk-oai-456"
+    assert parsed["DEEPSEEK_API_KEY"] == "sk-ds-789"
+    assert parsed["ENGRAM_MODEL"] == "gpt-4o"
+
+
+def test_load_dotenv_does_not_override_real_env(tmp_path):
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=from-file\nOPENAI_API_KEY=from-file\n")
+    env = {"ANTHROPIC_API_KEY": "from-shell"}  # already set → must win
+    cfg.load_dotenv(cwd=tmp_path, environ=env)
+    assert env["ANTHROPIC_API_KEY"] == "from-shell"  # not overridden
+    assert env["OPENAI_API_KEY"] == "from-file"  # filled in
+
+
+def test_load_dotenv_respects_engram_env_path(tmp_path):
+    custom = tmp_path / "secrets.env"
+    custom.write_text("DEEPSEEK_API_KEY=via-engram-env\n")
+    env = {"ENGRAM_ENV": str(custom)}
+    cfg.load_dotenv(cwd=tmp_path, environ=env)
+    assert env["DEEPSEEK_API_KEY"] == "via-engram-env"
+
+
 def test_default_config_toml_is_parseable_and_has_vault(tmp_path):
     body = cfg.default_config_toml("/my/vault")
     f = _write(tmp_path / "c.toml", body)
