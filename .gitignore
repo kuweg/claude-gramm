@@ -14,5 +14,8 @@ dist/
 *.egg-info/
 .ruff_cache/
 
+# Secrets — never commit a filled-in .env (the template .env.example is tracked)
+.env
+
 # Local state
 state.db
