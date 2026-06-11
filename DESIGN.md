@@ -69,7 +69,8 @@ stop_sequence, usage, diagnostics, type}`. Content block types observed:
 
 `~/.claude/projects/<path-encoded-project>/<session-uuid>.jsonl`. The directory name
 encodes `/` as `-`, which is **ambiguous** for paths containing dashes
-(`-home-kuweg-Projects-claude-gramm`). Never decode the directory name: take the
+(`-home-user-Projects-my-tool` could be `my-tool` or `my/tool`). Never decode the
+directory name: take the
 real project path from the `cwd` field of the first message event.
 
 ---
@@ -215,21 +216,23 @@ preference wins. Single-chunk sessions skip the reduce call.
 
 ### 4.1 Note template
 
-Path: `<vault>/Sessions/YYYY-MM-DD <slug>.md` (slug from title, ≤50 chars; collision → append `-2`).
+Path: `<vault>/<sessions_dir>/YYYY-MM-DD <slug>.md` (slug from title, ≤50 chars;
+collision → append `-2`). All vault subfolder names (`sessions_dir`, `concepts_dir`,
+`projects_dir_notes`) are config keys, not hardcoded — users have existing vault layouts.
 
 ```markdown
 ---
-date: 2026-06-11
-project: yapoc
-session_id: fd8e76a8-41ba-4587-8191-d8618bf13072
-type: debugging
+date: 2026-06-01
+project: demo
+session_id: 00000000-0000-4000-8000-000000000001
+type: feature
 tags: [session]
 engram_version: 1
 ---
 
-# fix-execute-dag-silent-error
+# add-fetcher-retry-logic
 
-**Project:** [[yapoc]] · **Branch:** main · **Type:** debugging
+**Project:** [[demo]] · **Branch:** main · **Type:** feature
 
 ## TL;DR
 …
@@ -244,8 +247,8 @@ engram_version: 1
 - [ ] …
 
 ## Touched
-- [[Concepts/asyncio|asyncio]], [[Concepts/DAG|DAG]]
-- `app/agents/base/runner.py`, `app/agents/master/agent.py`
+- [[Concepts/tokio|tokio]], [[Concepts/exponential backoff|exponential backoff]]
+- `src/lib.rs`, `src/main.rs`
 ```
 
 File paths render as inline code, not wikilinks (one note per source file would
@@ -259,16 +262,22 @@ create a second note for a known session).
 
 ### 4.2 Entity normalization (load-bearing)
 
-`entities.yaml`:
+`entities.yaml` ships **empty** — it is per-user state, not part of the tool.
+Two seeding mechanisms so users don't start from a blank graph:
+
+- **Projects are auto-approved entities.** Every distinct project (from message `cwd`)
+  encountered during processing is upserted as `type: project` automatically — project
+  hubs are the backbone of the graph and need no human review.
+- `engram entities review` grows the concept vocabulary over time (below).
 
 ```yaml
 entities:
-  - name: yapoc
+  - name: demo-service
     type: project
-    aliases: [YAPOC, yapoc-agents]
-  - name: asyncio
+    aliases: [demo, demo-svc]
+  - name: tokio
     type: library
-    aliases: [async-io, python asyncio]
+    aliases: [tokio-rs]
 ```
 
 Algorithm, per LLM-extracted entity string:
@@ -309,43 +318,56 @@ or `--force`. Everything else is skipped — that plus in-place note rewrite giv
 
 ## 5. Configuration
 
-Single file `~/.config/engram/config.toml` (path overridable via `ENGRAM_CONFIG`):
+Single file at the platform config dir (`platformdirs`: `~/.config/engram/config.toml`
+on Linux, `~/Library/Application Support/engram/` on macOS, `%APPDATA%\engram\` on
+Windows), overridable via `ENGRAM_CONFIG`. Created interactively by `engram init`,
+which asks for the vault path and writes sane defaults:
 
 ```toml
-projects_dir = "~/.claude/projects"
-vault_path   = "~/Documents/vault"
+projects_dir = "~/.claude/projects"   # auto-detected default
+vault_path   = "/path/to/your/vault"  # required; engram init prompts for it
 model        = "claude-haiku-4-5-20251001"
-entities_file = "~/Projects/engram/entities.yaml"
-state_db     = "~/.local/share/engram/state.db"
+entities_file = "<config-dir>/entities.yaml"
+state_db     = "<data-dir>/state.db"  # platformdirs user_data_dir
 redact       = true
 max_text_chars = 4000
+
+[vault]
+sessions_dir = "Sessions"
+concepts_dir = "Concepts"
+projects_dir = "Projects"
 ```
 
-API key from `ANTHROPIC_API_KEY` env only — never in config or DB.
+Every path is per-user; nothing in the tool references a specific machine, project,
+or vault layout. API key from `ANTHROPIC_API_KEY` env only — never in config or DB.
 
 ---
 
 ## 6. Trigger — SessionEnd hook + backfill
 
-`~/.claude/settings.json`:
+Users never hand-edit hook JSON: **`engram install-hook`** idempotently merges the
+SessionEnd entry into `~/.claude/settings.json` (creating a timestamped backup first);
+`engram uninstall-hook` removes exactly what it added.
+
+Installed entry (conceptually):
 
 ```json
 {
   "hooks": {
     "SessionEnd": [
-      { "hooks": [ { "type": "command",
-          "command": "systemd-run --user --collect ~/.local/bin/engram process --hook" } ] }
+      { "hooks": [ { "type": "command", "command": "engram process --hook --detach" } ] }
     ]
   }
 }
 ```
 
 The hook receives JSON on stdin (`session_id`, `transcript_path`, `cwd`, …);
-`engram process --hook` reads it, enqueues, and exits immediately —
-`systemd-run` detaches the real work so the hook never blocks Claude Code shutdown
-(fallback if systemd unavailable: `setsid … &`). `engram backfill` walks
-`projects_dir`, upserts every `*.jsonl` into the state DB, and processes pending
-ones oldest-first (`--limit N` for testing).
+`engram process --hook` reads it and exits immediately, re-spawning itself detached
+so the hook never blocks Claude Code shutdown. Detachment is handled *inside* engram
+(portable: `start_new_session=True` on POSIX, `DETACHED_PROCESS` on Windows) rather
+than in the hook command, so the installed JSON is identical on every platform.
+`engram backfill` walks `projects_dir`, upserts every `*.jsonl` into the state DB,
+and processes pending ones oldest-first (`--limit N` for testing).
 
 ---
 
@@ -357,15 +379,35 @@ cargo test + clippy -D warnings + pytest; `backfill`, `process`, `dry-run`).
 Note: this repo is currently `claude-gramm` with an exploratory hand-rolled JSON
 tokenizer/parser in `src/` (learning kata) — see Q6 for migration.
 
+### 7.1 Portability & distribution
+
+Engram is a general tool for **any Claude Code user**, not a personal script. Design
+consequences, in priority order:
+
+- **No baked-in names.** No project names, vault layouts, machine paths, or personal
+  vocabulary anywhere in code, prompts, or shipped files. Anything user-specific lives
+  in config, `entities.yaml`, or the state DB — all created at runtime. Examples in
+  docs/tests use the fabricated `demo` project from `fixtures/`.
+- **Platform targets:** Linux and macOS fully supported in v1; Windows best-effort
+  (paths via `platformdirs`/`pathlib` throughout, no shell-isms in hook commands — see Q9).
+- **Install story:** `uv tool install engram` (or `pipx`). The Python package ships the
+  Rust binary as a platform wheel artifact (maturin, even before any PyO3 bindings);
+  fallback `make build` from source. First run: `engram init` → `engram install-hook`
+  → `engram backfill --limit 5` as the guided onboarding path.
+- **Model-agnostic within Anthropic:** model id is config; prompts make no assumptions
+  about a specific model tier beyond "supports structured JSON output".
+- **Locale/timezone:** timestamps stored as the UTC ISO-8601 strings from the JSONL;
+  note dates rendered in the user's local timezone.
+
 ---
 
 ## 8. Privacy & security
 
 - Session content goes to the Anthropic API and nowhere else. No telemetry, no logging
   of transcript content (stderr logs carry line *numbers* and event *types* only).
-- **Recon finding (real, verified):** a `queue-operation` event in the bloodwork session
-  contains a literal sudo password typed into the prompt queue. Secrets *do* live in
-  these files. Consequences:
+- **Recon finding (real, verified):** a `queue-operation` event in one probed local
+  session contains a literal sudo password typed into the prompt queue. Secrets *do*
+  live in these files — assume this is true for every user. Consequences:
   1. Engram never processes `queue-operation`/`last-prompt` events (already non-signal).
   2. **Flagged addition:** Ingest gets a `--redact` pass (on by default) over kept text:
      regexes for `password|passwd|token|secret|api[_-]?key|bearer` followed by a value,
@@ -381,9 +423,11 @@ tokenizer/parser in `src/` (learning kata) — see Q6 for migration.
 **Phase 1 — Rust parser (`parser/`)**
 Tolerant serde model → compactor → contract serializer → `--redact`.
 *Verify:* `cargo test` green on fixtures (every event/block type + malformed + unknown-type lines);
-clippy clean; run against all 23 real local sessions: zero panics, zero hard errors,
-compacted output validates against the JSON Schema (`check-jsonschema`), spot-check
-one session's output by eye; 28 MB session parses in < 5 s.
+clippy clean; run against every real session on the dev machine (23 today): zero
+panics, zero hard errors, compacted output validates against the JSON Schema
+(`check-jsonschema`), spot-check one session's output by eye; the largest local
+session (28 MB) parses in < 5 s. These dev-machine runs are validation convenience,
+not a dependency — the committed test suite uses fixtures only.
 
 **Phase 2 — distill + weave with `--dry-run`**
 Python package, subprocess boundary, schema_version gate, Anthropic call, chunking,
@@ -413,10 +457,11 @@ Each phase ends with: update this document where reality diverged.
 | Q2 | `isSidechain` is false on 100% of events; `agent-name` events suggest subagents, but their transcripts aren't inline. Where are they? | Ignore for v1. Main transcript already contains Task tool args + summaries. Revisit if notes feel hollow for agent-heavy sessions. |
 | Q3 | Include assistant `thinking` blocks in compacted output? They contain reasoning behind decisions but are bulky and rambling. | Drop in v1. `text` blocks state final decisions; thinking would double payload for marginal gain. Schema has room to add later (`kind:"thinking"`). |
 | Q4 | Are in-session compact summaries (`isCompactSummary`) ever the *only* record (e.g., session resumed from another file)? | Drop them in v1; `--keep-compact-summaries` escape hatch if cross-session resumes prove lossy. |
-| Q5 | `ai-title` vs `agent-name` for titles — yapoc sessions have both, sometimes differing. | Prefer last `ai-title`; fall back to last `agent-name`; else LLM writes one. |
+| Q5 | `ai-title` vs `agent-name` for titles — some probed sessions have both, sometimes differing. | Prefer last `ai-title`; fall back to last `agent-name`; else LLM writes one. |
 | Q6 | This repo is `claude-gramm` with a learning-kata JSON parser in `src/`. Adopt the `engram/` layout here, or fresh repo? | Restructure this repo in place (git mv kata to `experiments/json-kata/`); keep history, rename repo to `engram`. |
-| Q7 | The found sudo password predates engram. | Out of engram's scope, but: rotate that password, and consider pruning old sessions. |
+| Q7 | Recon found a real typed password in a local session (predates engram). | Out of engram's scope, but act on it: rotate that password. For the tool: this is why `--redact` defaults to on for all users. |
 | Q8 | Haiku quality on `decisions[]` extraction is unproven. | Build with model configurable; Phase 2 verification includes one side-by-side Haiku vs Sonnet comparison on the same session. |
+| Q9 | Full Windows support in v1? Claude Code runs there, but hook detachment and path encoding differ. | Ship Linux/macOS as supported, Windows as untested-but-unblocked (pure-`pathlib` code, `platformdirs`, no POSIX-only calls in the main path). Promote after one real Windows report. |
 
 ---
 
