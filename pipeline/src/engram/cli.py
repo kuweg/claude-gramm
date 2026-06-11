@@ -7,9 +7,10 @@ so config/hook commands work without ANTHROPIC_API_KEY.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import backfill as backfill_mod
 from . import hook, review
@@ -32,19 +33,40 @@ def build_client(config: Config) -> Any:
 # commands
 # --------------------------------------------------------------------------
 
+def prompt_vault_path(
+    input_fn: Callable[..., str] = input,
+    print_fn: Callable[..., None] = print,
+) -> str:
+    """Interactively resolve a vault path: expand ~, verify it's a directory,
+    and offer to create it if missing. Loops until a usable path is given."""
+    while True:
+        raw = input_fn("Path to your Obsidian vault: ").strip()
+        if not raw:
+            print_fn("A vault path is required (Ctrl-C to abort).")
+            continue
+        path = Path(os.path.expanduser(raw))
+        if path.is_dir():
+            return str(path)
+        if path.exists():
+            print_fn(f"{path} exists but is not a directory.")
+            continue
+        answer = input_fn(f"{path} does not exist. Create it? [y/N]: ").strip().lower()
+        if answer in ("y", "yes"):
+            path.mkdir(parents=True, exist_ok=True)
+            return str(path)
+        # declined → ask again
+
+
 def cmd_init(args: argparse.Namespace) -> int:
     path = config_path(args.config)
     if path.exists() and not args.force:
         print(f"config already exists at {path} (use --force to overwrite)")
         return 1
-    vault = args.vault or input("Path to your Obsidian vault: ").strip()
-    if not vault:
-        print("error: a vault path is required")
-        return 1
+    vault = os.path.expanduser(args.vault.strip()) if args.vault else prompt_vault_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(default_config_toml(vault))
     print(f"wrote {path}")
-    print("next: engram install-hook && engram backfill --limit 5")
+    print("next: set ANTHROPIC_API_KEY, then `engram install-hook && engram backfill --limit 5`")
     return 0
 
 
