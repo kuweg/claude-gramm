@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "engram compacted session",
+  "type": "object",
+  "required": ["schema_version", "session_id", "events", "stats"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "session_id":     { "type": "string" },
+    "project_path":   { "type": ["string", "null"] },
+    "git_branch":     { "type": ["string", "null"] },
+    "cc_version":     { "type": ["string", "null"] },
+    "title":          { "type": ["string", "null"] },
+    "started_at":     { "type": ["string", "null"], "format": "date-time" },
+    "ended_at":       { "type": ["string", "null"], "format": "date-time" },
+    "files_touched":  { "type": "array", "items": { "type": "string" } },
+    "stats": {
+      "type": "object",
+      "required": ["total_lines", "skipped_lines", "user_messages",
+                   "assistant_messages", "tool_calls", "compact_boundaries"],
+      "properties": {
+        "total_lines":        { "type": "integer" },
+        "skipped_lines":      { "type": "integer" },
+        "user_messages":      { "type": "integer" },
+        "assistant_messages": { "type": "integer" },
+        "tool_calls":         { "type": "integer" },
+        "compact_boundaries": { "type": "integer" }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind"],
+        "properties": {
+          "kind": { "enum": ["user", "assistant", "tool"] },
+          "ts":   { "type": ["string", "null"] },
+          "text": { "type": "string" },
+          "name": { "type": "string" },
+          "arg":  { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+/target
+parser/target
+
+# Never commit real session transcripts (may contain secrets — see DESIGN §8)
+*.jsonl
+!fixtures/*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+dist/
+*.egg-info/
+.ruff_cache/
+
+# Local state
+state.db

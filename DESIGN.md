@@ -473,3 +473,58 @@ tool_use/compact-boundary/compact-summary), plus `fixtures/malformed.jsonl` (tru
 empty line, unknown `type`) and `fixtures/compacted.sample.json` (a hand-written document
 conforming to §2.1, used by Python tests). All UUIDs, paths, and content are fabricated;
 no real session text is committed.
+
+---
+
+## 12. Implementation status & divergences
+
+### Phase 1 — Rust parser ✅ (`parser/`, `schema/compacted.schema.json`)
+
+Workspace crate `engram-parser` (lib + `engram-parse` bin). 28 tests
+(`tests/compaction.rs`, `tests/golden.rs`, `tests/cli.rs`); clippy `-D warnings` clean.
+Golden test confirms `events.jsonl` → `compacted.sample.json` exactly. Validated on the
+real 2 MB local session: 780 lines, 0 skipped, 0 panics, parsed in 16 ms.
+
+Divergences from the design as written:
+- **Q1 (tool_result error markers) deferred.** The frozen §2.1 contract has no slot for
+  an error flag (events are `user|assistant|tool` with `text|name|arg` only), so `tool_result`
+  bodies are dropped wholesale per the firm §2 rule. Revisit by adding `kind:"tool"` arg
+  suffixing or a schema bump if debugging-session classification suffers.
+- **`stats.total_lines` counts every physical line**, including blank lines; `skipped_lines`
+  counts only non-blank lines that failed to deserialize. Blank lines are neither parsed nor
+  counted as skips.
+- **Redaction base64 heuristic excludes `/`.** The original `[A-Za-z0-9+/]{40,}` matched long
+  Unix paths (115 false-positives on the real session — every `…/telegram_bot.py` got nuked).
+  Now `\b[A-Za-z0-9+]{40,}={0,2}`; false-positives dropped to 1. Standard-base64 secrets
+  containing `/` degrade gracefully (caught per-segment). Redaction remains imperfect by design.
+- `assistant_messages` counts each assistant *event*; `user_messages` counts user events that
+  produced kept prose (excludes pure tool_result carriers, compact summaries, `isMeta`).
+
+### Phase 2 — Python distill + weave ✅ (`pipeline/`)
+
+uv/hatchling package `engram` (`src/engram/`): `ingest` (subprocess + schema_version gate),
+`distill` (Anthropic structured-output call + map-reduce chunking), `render` (note template),
+`entities` (normalization), `state` (SQLite), `config` (platformdirs/TOML), `process`
+(orchestration + idempotency), `cli`. 70 pytest tests, all green, **no API in CI** — the
+Anthropic client is injected and faked (record/replay). `engram process --dry-run` prints the
+note and writes nothing; re-runs no-op; new entities land in `pending_entities` as plain text.
+
+Notes:
+- Structured output uses `output_config.format` (json_schema) on `messages.create`, model
+  `claude-haiku-4-5-20251001` (config-overridable) — matches the design's §3.1 schema verbatim,
+  including the flagged `session_type: "other"`.
+- Config key collision resolved: top-level `projects_dir` (Claude projects dir) vs vault
+  `[vault].projects_dir` (notes folder) → exposed as `Config.projects_dir` and
+  `Config.projects_dir_notes`.
+- The §2.1 schema is committed at `schema/compacted.schema.json` and validated in-tree
+  (sample, fixture output, and the real 2 MB session all pass `jsonschema`).
+
+### Phase 3 — hook + backfill + entity review ✅ (`pipeline/`)
+
+`hook` (idempotent `settings.json` merge + timestamped backup + portable detached re-spawn),
+`backfill` (discover `*.jsonl`, process oldest-first, `--limit`), `review` (approve / alias /
+reject → `entities.yaml` + `Concepts/` stub + state). CLI subcommands: `init`, `install-hook`,
+`uninstall-hook`, `process [--hook --detach]`, `backfill`, `entities review`. `Makefile`
+(`build`/`test`/`lint`/`backfill`/`process`/`dry-run`) ties Rust + Python together.
+
+Total: **98 tests** (28 Rust + 70 Python), all green; clippy `-D warnings` clean.

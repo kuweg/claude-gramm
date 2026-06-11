@@ -1,0 +1,11 @@
+# engram entity vocabulary — ships EMPTY (per-user state; DESIGN §4.2).
+#
+# Projects are auto-approved as you process sessions. Concepts are grown via
+# `engram entities review`. This file is a template; the live copy lives in your
+# config dir (see `entities_file` in config.toml).
+#
+# entities:
+#   - name: tokio
+#     type: library
+#     aliases: [tokio-rs]
+entities: []
