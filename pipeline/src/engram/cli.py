@@ -123,9 +123,28 @@ def _process_hook(args: argparse.Namespace) -> int:
     return 0
 
 
+def format_progress(done: int, total: int, label: str, status: str, width: int = 22) -> str:
+    frac = done / total if total else 1.0
+    filled = int(width * frac)
+    bar = "█" * filled + "·" * (width - filled)
+    verb = "▶ distilling" if status == "start" else status
+    return f"[{bar}] {done}/{total} {int(frac * 100):3d}%  {verb:<12} {label[:34]}"
+
+
+def _progress_printer(stream: Any = None) -> Callable[[int, int, str, str], None]:
+    stream = stream or sys.stderr
+
+    def report(done: int, total: int, label: str, status: str) -> None:
+        stream.write("\r" + format_progress(done, total, label, status).ljust(78))
+        stream.flush()
+
+    return report
+
+
 def cmd_backfill(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     client = build_client(config)  # dry-run still distills; it only skips the write
+    progress = _progress_printer() if sys.stderr.isatty() else None
     with State(config.state_db) as state:
         book = EntityBook.from_yaml(config.entities_file)
         results = backfill_mod.backfill(
@@ -136,7 +155,10 @@ def cmd_backfill(args: argparse.Namespace) -> int:
             limit=args.limit,
             dry_run=args.dry_run,
             force=args.force,
+            progress=progress,
         )
+    if progress is not None:
+        sys.stderr.write("\n")
     woven = sum(r.status in ("woven", "dry_run") for r in results)
     print(f"processed {woven} session(s)")
     return 0

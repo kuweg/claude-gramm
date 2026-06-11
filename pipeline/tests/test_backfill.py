@@ -87,6 +87,25 @@ def test_backfill_limit_caps_processed(cfg):
     assert all(r.status == "woven" for r in results)
 
 
+def test_backfill_reports_progress(cfg):
+    proj = cfg.projects_dir
+    proj.mkdir(parents=True)
+    _session_file(proj / "s1.jsonl", "s1", mtime=100)
+    _session_file(proj / "s2.jsonl", "s2", mtime=200)
+    events = []
+    client = FakeClient([DISTILLED, DISTILLED])
+    with State(cfg.state_db) as state:
+        book = EntityBook.from_yaml(cfg.entities_file)
+        backfill.backfill(
+            cfg, client, state=state, book=book,
+            progress=lambda done, total, label, status: events.append((done, total, status)),
+        )
+    statuses = [e[2] for e in events]
+    assert "start" in statuses          # in-flight notification per item
+    assert statuses.count("woven") == 2  # one completion per session
+    assert events[-1][0] == events[-1][1] == 2  # final done == total
+
+
 def test_backfill_rerun_is_noop(cfg):
     proj = cfg.projects_dir
     proj.mkdir(parents=True)

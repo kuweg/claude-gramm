@@ -128,6 +128,18 @@ def test_missing_api_key_is_clean_error_not_traceback(tmp_path, fixtures_dir, pa
     assert "Traceback" not in err
 
 
+def test_format_progress_renders_bar_count_and_status():
+    line = cli.format_progress(1, 4, "2026-06-01 session.jsonl", "woven")
+    assert "1/4" in line
+    assert "25%" in line
+    assert "woven" in line
+    assert "█" in line and "·" in line
+
+
+def test_format_progress_start_shows_distilling():
+    assert "distilling" in cli.format_progress(0, 4, "x.jsonl", "start")
+
+
 def test_build_parser_has_all_subcommands():
     parser = cli.build_parser()
     # argparse exits on missing subcommand; just ensure choices exist
