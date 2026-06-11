@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from . import backfill as backfill_mod
-from . import hook, review
+from . import hook, llm, review
 from .config import Config, config_path, default_config_toml, load_config
 from .entities import EntityBook
 from .process import process_session
@@ -23,10 +23,8 @@ DEFAULT_SETTINGS = Path.home() / ".claude" / "settings.json"
 
 
 def build_client(config: Config) -> Any:
-    """Construct the Anthropic client. Patched out in tests."""
-    import anthropic
-
-    return anthropic.Anthropic()
+    """Construct the LLM client (Anthropic/OpenAI/DeepSeek via env). Patched in tests."""
+    return llm.build_from_env(config)
 
 
 # --------------------------------------------------------------------------

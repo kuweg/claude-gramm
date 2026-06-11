@@ -10,7 +10,7 @@ from engram import backfill
 from engram.config import Config
 from engram.entities import EntityBook
 from engram.state import State
-from tests.test_process import FakeClient, DISTILLED
+from tests._fakes import DISTILLED, FakeLLM as FakeClient
 
 
 def _session_file(path, session_id, cwd="/p/demo", mtime=None):
@@ -100,4 +100,4 @@ def test_backfill_rerun_is_noop(cfg):
         book = EntityBook.from_yaml(cfg.entities_file)
         results = backfill.backfill(cfg, client2, state=state, book=book)
     assert all(r.status == "skipped" for r in results)
-    assert client2.calls == []
+    assert client2.json_calls == []

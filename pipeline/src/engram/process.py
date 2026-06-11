@@ -70,7 +70,7 @@ def process_session(
         if not state.needs_processing(session_id, mtime=mtime, size=size, force=force):
             return ProcessResult(status="skipped", session_id=session_id)
 
-    distilled = distill.distill_session(compacted, client, model=config.model)
+    distilled = distill.distill_session(compacted, client)
 
     if book is None:
         book = EntityBook.from_yaml(config.entities_file)

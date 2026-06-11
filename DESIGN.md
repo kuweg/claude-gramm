@@ -510,9 +510,17 @@ Anthropic client is injected and faked (record/replay). `engram process --dry-ru
 note and writes nothing; re-runs no-op; new entities land in `pending_entities` as plain text.
 
 Notes:
-- Structured output uses `output_config.format` (json_schema) on `messages.create`, model
-  `claude-haiku-4-5-20251001` (config-overridable) — matches the design's §3.1 schema verbatim,
-  including the flagged `session_type: "other"`.
+- **Multi-provider (post-v1 extension).** Distillation goes through an `llm.LLMClient`
+  abstraction with Anthropic, OpenAI (ChatGPT), and DeepSeek backends. Provider/model are
+  env-selected: `ENGRAM_MODEL` (overrides `config.model`) + optional `ENGRAM_PROVIDER`
+  (else inferred from the model id). DeepSeek reuses the OpenAI SDK with `base_url` and
+  JSON-object output mode. Keys: `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY`.
+- **Default model is `claude-sonnet-4-6`** (was Haiku). Resolves Q8: Haiku flattens
+  `decisions[]`/`problems_solved[]` nuance; Sonnet extracts it well, stays cheap vs Opus, and
+  its 1M context reduces chunking. Override with `ENGRAM_MODEL=claude-haiku-4-5` for cost.
+- Anthropic uses `output_config.format` (json_schema); OpenAI uses `response_format` json_schema;
+  DeepSeek uses `response_format` json_object with the schema described in-prompt. All match
+  the design's §3.1 schema, including the flagged `session_type: "other"`.
 - Config key collision resolved: top-level `projects_dir` (Claude projects dir) vs vault
   `[vault].projects_dir` (notes folder) → exposed as `Config.projects_dir` and
   `Config.projects_dir_notes`.

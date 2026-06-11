@@ -28,7 +28,10 @@ def _data_dir() -> Path:
 DEFAULTS: dict[str, Any] = {
     "projects_dir": "~/.claude/projects",
     "vault_path": "",
-    "model": "claude-haiku-4-5-20251001",
+    # Sonnet 4.6 is the default: distillation extracts decisions/problems, where
+    # Haiku flattens nuance (DESIGN Q8). Override per-run with ENGRAM_MODEL — e.g.
+    # claude-haiku-4-5 for cost, gpt-4o / deepseek-chat for other providers.
+    "model": "claude-sonnet-4-6",
     "redact": True,
     "max_text_chars": 4000,
     "parser_bin": "",  # empty → resolve from PATH

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 
 from engram import cli
-from tests.test_process import FakeClient, DISTILLED
+from tests._fakes import DISTILLED, FakeLLM as FakeClient
 
 
 def test_init_writes_config(tmp_path, capsys):

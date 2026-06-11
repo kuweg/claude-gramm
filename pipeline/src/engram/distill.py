@@ -7,10 +7,8 @@ distilled per chunk, then reduced (arrays merged + deduped, tldrs re-summarized)
 """
 from __future__ import annotations
 
-import json
 from typing import Any
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 # chars/4 ≈ tokens; keep a chunk well under the model context budget.
 DEFAULT_MAX_CHUNK_CHARS = 600_000
 DISTILL_MAX_TOKENS = 4096
@@ -95,30 +93,19 @@ def build_prompt(compacted: dict[str, Any], events: list[dict[str, Any]] | None 
     )
 
 
-def _extract_text(response: Any) -> str:
-    for block in response.content:
-        if getattr(block, "type", None) == "text":
-            return block.text
-    raise ValueError("no text block in response")
-
-
 def distill_chunk(
     events: list[dict[str, Any]],
     compacted: dict[str, Any],
     client: Any,
-    *,
-    model: str = DEFAULT_MODEL,
 ) -> dict[str, Any]:
     """Distill one chunk of events into the structured-output schema."""
     prompt = build_prompt(compacted, events=events)
-    response = client.messages.create(
-        model=model,
-        max_tokens=DISTILL_MAX_TOKENS,
+    return client.complete_json(
         system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
-        output_config={"format": {"type": "json_schema", "schema": DISTILL_SCHEMA}},
+        prompt=prompt,
+        schema=DISTILL_SCHEMA,
+        max_tokens=DISTILL_MAX_TOKENS,
     )
-    return json.loads(_extract_text(response))
 
 
 def chunk_events(
@@ -162,9 +149,7 @@ def _dedupe_dicts(items: list[dict[str, Any]], key_field: str) -> list[dict[str,
     return out
 
 
-def reduce_distillations(
-    parts: list[dict[str, Any]], client: Any, *, model: str = DEFAULT_MODEL
-) -> dict[str, Any]:
+def reduce_distillations(parts: list[dict[str, Any]], client: Any) -> dict[str, Any]:
     """Merge chunk distillations: concat+dedupe arrays, re-summarize tldrs."""
     decisions = _dedupe_dicts([d for p in parts for d in p.get("decisions", [])], "what")
     problems = _dedupe_dicts(
@@ -174,24 +159,18 @@ def reduce_distillations(
     entities = _dedupe_strings([e for p in parts for e in p.get("entities", [])])
 
     tldrs = "\n".join(f"- {p.get('tldr', '')}" for p in parts)
-    response = client.messages.create(
-        model=model,
-        max_tokens=512,
+    tldr = client.complete_text(
         system=SYSTEM_PROMPT,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    "Merge these partial session summaries into one concise TL;DR "
-                    f"(2-4 sentences, past tense, concrete):\n{tldrs}"
-                ),
-            }
-        ],
+        prompt=(
+            "Merge these partial session summaries into one concise TL;DR "
+            f"(2-4 sentences, past tense, concrete):\n{tldrs}"
+        ),
+        max_tokens=512,
     )
     return {
         "title": parts[-1].get("title", "untitled"),
         "session_type": parts[-1].get("session_type", "other"),
-        "tldr": _extract_text(response).strip(),
+        "tldr": tldr.strip(),
         "decisions": decisions,
         "problems_solved": problems,
         "open_threads": threads,
@@ -203,13 +182,12 @@ def distill_session(
     compacted: dict[str, Any],
     client: Any,
     *,
-    model: str = DEFAULT_MODEL,
     max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
 ) -> dict[str, Any]:
     """Distill a whole session, chunking + reducing only if it overflows."""
     chunks = chunk_events(compacted.get("events", []), max_chars=max_chunk_chars)
     if len(chunks) <= 1:
         events = chunks[0] if chunks else []
-        return distill_chunk(events, compacted, client, model=model)
-    parts = [distill_chunk(chunk, compacted, client, model=model) for chunk in chunks]
-    return reduce_distillations(parts, client, model=model)
+        return distill_chunk(events, compacted, client)
+    parts = [distill_chunk(chunk, compacted, client) for chunk in chunks]
+    return reduce_distillations(parts, client)

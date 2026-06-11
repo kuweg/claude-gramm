@@ -25,7 +25,22 @@ engram install-hook           # SessionEnd hook → notes appear after each sess
 engram backfill --limit 5     # process the 5 oldest existing sessions
 ```
 
-`ANTHROPIC_API_KEY` must be set in the environment — it is never read from config.
+The API key must be set in the environment — never read from config.
+
+## Model / provider selection
+
+The distillation model is chosen via the environment (falls back to `config.model`,
+default `claude-sonnet-4-6`). The provider is inferred from the model id:
+
+```sh
+export ENGRAM_MODEL=claude-sonnet-4-6   ANTHROPIC_API_KEY=sk-ant-...   # Anthropic (default)
+export ENGRAM_MODEL=claude-haiku-4-5    ANTHROPIC_API_KEY=sk-ant-...   # cheaper
+export ENGRAM_MODEL=gpt-4o              OPENAI_API_KEY=sk-...          # OpenAI / ChatGPT
+export ENGRAM_MODEL=deepseek-chat       DEEPSEEK_API_KEY=sk-...        # DeepSeek
+```
+
+Set `ENGRAM_PROVIDER=anthropic|openai|deepseek` to force a provider for a non-standard
+model id. See `.env.example`.
 
 ## Commands
 

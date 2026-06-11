@@ -1,40 +1,8 @@
-"""Tests for distillation: prompt build, Anthropic call (faked), chunking (DESIGN §3)."""
+"""Tests for distillation: prompt build, LLM call (faked), chunking (DESIGN §3)."""
 from __future__ import annotations
 
-import json
-
-import pytest
-
 from engram import distill
-
-
-class FakeBlock:
-    def __init__(self, text):
-        self.type = "text"
-        self.text = text
-
-
-class FakeResponse:
-    def __init__(self, payload):
-        self.content = [FakeBlock(payload if isinstance(payload, str) else json.dumps(payload))]
-
-
-class FakeMessages:
-    def __init__(self, outer):
-        self._outer = outer
-
-    def create(self, **kwargs):
-        self._outer.calls.append(kwargs)
-        return FakeResponse(self._outer.queue.pop(0))
-
-
-class FakeClient:
-    """Record/replay stand-in for anthropic.Anthropic (no network in CI)."""
-
-    def __init__(self, queue):
-        self.queue = list(queue)
-        self.calls = []
-        self.messages = FakeMessages(self)
+from tests._fakes import FakeLLM
 
 
 def _compacted(events=None):
@@ -76,16 +44,11 @@ def test_build_prompt_renders_events():
     assert "project=/p/demo" in prompt
 
 
-def test_distill_chunk_calls_client_and_parses_json():
-    client = FakeClient([_payload()])
-    result = distill.distill_chunk(_compacted()["events"], _compacted(), client, model="m")
+def test_distill_chunk_requests_structured_json():
+    client = FakeLLM(json_responses=[_payload()])
+    result = distill.distill_chunk(_compacted()["events"], _compacted(), client)
     assert result["title"] == "add-fetcher-retry-logic"
-    assert result["entities"] == ["tokio"]
-    # structured output requested
-    kwargs = client.calls[0]
-    assert kwargs["model"] == "m"
-    assert "output_config" in kwargs
-    assert kwargs["output_config"]["format"]["type"] == "json_schema"
+    assert client.json_calls[0]["schema"] == distill.DISTILL_SCHEMA
 
 
 def test_chunk_events_splits_on_user_boundaries():
@@ -97,7 +60,6 @@ def test_chunk_events_splits_on_user_boundaries():
     ]
     chunks = distill.chunk_events(events, max_chars=150)
     assert len(chunks) == 2
-    # each chunk starts at a user message
     assert chunks[0][0]["kind"] == "user"
     assert chunks[1][0]["kind"] == "user"
 
@@ -108,10 +70,11 @@ def test_chunk_events_single_chunk_when_small():
 
 
 def test_distill_session_single_chunk_one_call():
-    client = FakeClient([_payload()])
-    out = distill.distill_session(_compacted(), client, model="m", max_chunk_chars=10_000)
+    client = FakeLLM(json_responses=[_payload()])
+    out = distill.distill_session(_compacted(), client, max_chunk_chars=10_000)
     assert out["tldr"] == "Added backoff."
-    assert len(client.calls) == 1  # no reduce call
+    assert len(client.json_calls) == 1
+    assert client.text_calls == []  # no reduce
 
 
 def test_distill_session_multi_chunk_maps_and_reduces():
@@ -123,17 +86,16 @@ def test_distill_session_multi_chunk_maps_and_reduces():
             {"kind": "assistant", "text": "w" * 200},
         ]
     )
-    # two map responses + one reduce (tldr merge) response
-    client = FakeClient(
-        [
+    client = FakeLLM(
+        json_responses=[
             _payload(decisions=[{"what": "use backoff", "why": "resilience"}], entities=["tokio"]),
             _payload(decisions=[{"what": "use backoff", "why": "resilience"}], entities=["serde"]),
-            "Merged summary of both chunks.",
-        ]
+        ],
+        text_responses=["Merged summary of both chunks."],
     )
-    out = distill.distill_session(big, client, model="m", max_chunk_chars=300)
-    assert len(client.calls) == 3  # 2 maps + 1 reduce
-    # arrays merged + deduped (one decision, not two)
-    assert len(out["decisions"]) == 1
+    out = distill.distill_session(big, client, max_chunk_chars=300)
+    assert len(client.json_calls) == 2  # one per chunk
+    assert len(client.text_calls) == 1  # reduce
+    assert len(out["decisions"]) == 1  # deduped
     assert set(out["entities"]) == {"tokio", "serde"}
     assert out["tldr"] == "Merged summary of both chunks."

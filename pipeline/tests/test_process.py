@@ -1,52 +1,13 @@
 """Tests for end-to-end session processing + idempotency (DESIGN §4, Phase 2 verify)."""
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from engram.config import Config
 from engram.entities import EntityBook
 from engram.process import process_session
 from engram.state import State
-
-
-class FakeBlock:
-    def __init__(self, text):
-        self.type = "text"
-        self.text = text
-
-
-class FakeResponse:
-    def __init__(self, payload):
-        self.content = [FakeBlock(json.dumps(payload) if isinstance(payload, dict) else payload)]
-
-
-class FakeMessages:
-    def __init__(self, outer):
-        self._outer = outer
-
-    def create(self, **kwargs):
-        self._outer.calls.append(kwargs)
-        return FakeResponse(self._outer.queue.pop(0))
-
-
-class FakeClient:
-    def __init__(self, queue):
-        self.queue = list(queue)
-        self.calls = []
-        self.messages = FakeMessages(self)
-
-
-DISTILLED = {
-    "title": "add-fetcher-retry-logic",
-    "tldr": "Added exponential backoff to the fetcher.",
-    "session_type": "feature",
-    "decisions": [],
-    "problems_solved": [],
-    "open_threads": [],
-    "entities": ["tokio", "exponential backoff"],
-}
+from tests._fakes import DISTILLED, FakeLLM as FakeClient
 
 
 @pytest.fixture
@@ -123,7 +84,7 @@ def test_second_run_is_idempotent_noop(env, fixtures_dir):
     client2 = FakeClient([DISTILLED])
     result = _run(env, fixtures_dir, client2)
     assert result.status == "skipped"
-    assert client2.calls == []  # distill never called
+    assert client2.json_calls == []  # distill never called
     files = list((env.vault_path / "Sessions").glob("*.md"))
     assert len(files) == 1  # no duplicate note
 
@@ -133,4 +94,4 @@ def test_force_reprocesses(env, fixtures_dir):
     client2 = FakeClient([DISTILLED])
     result = _run(env, fixtures_dir, client2, force=True)
     assert result.status == "woven"
-    assert len(client2.calls) == 1
+    assert len(client2.json_calls) == 1
