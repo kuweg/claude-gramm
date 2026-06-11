@@ -16,6 +16,12 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 ```
 
 The Rust binary `engram-parse` must be on `PATH` (or set `parser_bin` in config).
+From the repo root, `make install` symlinks it into `~/.local/bin` for you:
+
+```sh
+make build      # cargo build --release + editable install
+make install    # symlink engram-parse -> ~/.local/bin (warns if not on PATH)
+```
 
 ## Onboarding
 
