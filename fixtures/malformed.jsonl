@@ -1,0 +1,5 @@
+{"type":"user","message":{"role":"user","content":"this line is truncated and invalid JSON
+{"type":"some-future-event-type","payload":{"nested":true},"sessionId":"00000000-0000-4000-8000-000000000001"}
+
+{"no_type_field":true,"uuid":"00000000-0000-4000-8000-0000000000x1"}
+{"type":"assistant","message":{"role":"assistant","content":"unexpected: content is a bare string on an assistant event"},"uuid":"00000000-0000-4000-8000-0000000000x2","sessionId":"00000000-0000-4000-8000-000000000001"}

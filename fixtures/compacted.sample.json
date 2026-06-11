@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "project_path": "/home/user/projects/demo",
+  "git_branch": "main",
+  "cc_version": "2.1.158",
+  "title": "add-fetcher-retry-logic",
+  "started_at": "2026-06-01T10:00:01.000Z",
+  "ended_at": "2026-06-01T10:00:30.000Z",
+  "files_touched": ["src/lib.rs", "src/main.rs"],
+  "stats": {
+    "total_lines": 20,
+    "skipped_lines": 0,
+    "user_messages": 3,
+    "assistant_messages": 3,
+    "tool_calls": 2,
+    "compact_boundaries": 1
+  },
+  "events": [
+    { "kind": "user", "ts": "2026-06-01T10:00:01.000Z", "text": "add retry logic to the fetcher and write tests" },
+    { "kind": "user", "ts": "2026-06-01T10:00:02.000Z", "text": "also bump the timeout to 30s" },
+    { "kind": "assistant", "ts": "2026-06-01T10:00:05.000Z", "text": "I'll add exponential backoff to the fetcher." },
+    { "kind": "tool", "ts": "2026-06-01T10:00:05.000Z", "name": "Read", "arg": "/home/user/projects/demo/src/lib.rs" },
+    { "kind": "tool", "ts": "2026-06-01T10:00:10.000Z", "name": "Bash", "arg": "cargo test" },
+    { "kind": "user", "ts": "2026-06-01T10:00:20.000Z", "text": "[image image/png 0KB] here is the failing screenshot" },
+    { "kind": "assistant", "ts": "2026-06-01T10:00:30.000Z", "text": "Fixed: the retry loop now caps at 3 attempts with exponential backoff. All tests pass." }
+  ]
+}
